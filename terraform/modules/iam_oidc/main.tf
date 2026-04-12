@@ -57,6 +57,11 @@ resource "aws_iam_role_policy" "ecs" {
         Resource = "*"
       },
       {
+        Effect   = "Allow"
+        Action   = ["logs:GetLogEvents", "logs:DescribeLogStreams"]
+        Resource = "*"
+      },
+      {
         # Allow ECS to use the task execution role via PassRole
         Effect   = "Allow"
         Action   = ["iam:PassRole"]
