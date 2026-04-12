@@ -75,7 +75,7 @@ jobs:
             --task-definition "$ECS_TASK_DEFINITION" \
             --launch-type FARGATE \
             --network-configuration "awsvpcConfiguration={subnets=[$ECS_SUBNET_ID],securityGroups=[$ECS_SECURITY_GROUP_ID],assignPublicIp=ENABLED}" \
-            --overrides "{\"containerOverrides\":[{\"name\":\"api\",\"image\":\"$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG\",\"command\":[\"python3\",\"-m\",\"alembic\",\"upgrade\",\"head\"]}]}" \
+            --overrides "{\"containerOverrides\":[{\"name\":\"api\",\"command\":[\"python3\",\"-m\",\"alembic\",\"upgrade\",\"head\"]}]}" \
             --region ap-northeast-1 \
             --query 'tasks[0].taskArn' --output text)
 
