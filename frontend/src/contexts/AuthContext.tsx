@@ -1,4 +1,4 @@
-import { createContext, useState, useCallback, ReactNode } from 'react'
+import { createContext, useState, useCallback, useEffect, ReactNode } from 'react'
 import { authApi } from '../api/auth'
 
 interface AuthContextValue {
@@ -21,8 +21,18 @@ function parseJwt(token: string): { sub: string } | null {
   }
 }
 
+function loadToken(): string {
+  const raw = localStorage.getItem('token') ?? ''
+  // JWTは3つのドット区切りセグメントを持つ。それ以外は無効なトークンとして捨てる
+  if (raw && raw.split('.').length !== 3) {
+    localStorage.removeItem('token')
+    return ''
+  }
+  return raw
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string>(localStorage.getItem('token') ?? '')
+  const [token, setToken] = useState<string>(loadToken)
 
   const currentUserId: number | null = token
     ? Number(parseJwt(token)?.sub ?? null)
@@ -41,6 +51,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     localStorage.removeItem('token')
     setToken('')
+  }, [])
+
+  // axios interceptorが401を検知したときにReact状態も同期する
+  useEffect(() => {
+    const handler = () => setToken('')
+    window.addEventListener('auth:logout', handler)
+    return () => window.removeEventListener('auth:logout', handler)
   }, [])
 
   return (

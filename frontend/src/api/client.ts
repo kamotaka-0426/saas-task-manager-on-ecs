@@ -11,11 +11,14 @@ client.interceptors.request.use((config) => {
   return config
 })
 
-// On 401, clear token (caller decides whether to redirect)
+// On 401, clear token and notify AuthContext via custom event
 client.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401) localStorage.removeItem('token')
+    if (err.response?.status === 401) {
+      localStorage.removeItem('token')
+      window.dispatchEvent(new Event('auth:logout'))
+    }
     return Promise.reject(err)
   },
 )

@@ -128,7 +128,7 @@ terraform -chdir="$DEV_DIR" output -raw ecs_public_subnet_id             | awk '
 terraform -chdir="$DEV_DIR" output -raw ecs_security_group_id            | awk '{print "  ECS_SECURITY_GROUP_ID         = " $0}'
 terraform -chdir="$DEV_DIR" output -raw frontend_s3_bucket_name          | awk '{print "  S3_BUCKET_NAME                = " $0}'
 terraform -chdir="$DEV_DIR" output -raw frontend_cloudfront_distribution_id | awk '{print "  CLOUDFRONT_DISTRIBUTION_ID    = " $0}'
-terraform -chdir="$DEV_DIR" output -raw frontend_url                     | awk '{print "  VITE_API_URL                  = " $0 "/api"}'
+terraform -chdir="$DEV_DIR" output -raw api_url                          | awk '{print "  VITE_API_URL                  = " $0}'
 echo ""
 echo "--- Terraform State Bucket ---"
 echo "  Bucket: $BUCKET_NAME  (already written to $DEV_MAIN_TF)"
