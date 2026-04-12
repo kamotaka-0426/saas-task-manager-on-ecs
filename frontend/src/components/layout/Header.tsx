@@ -9,7 +9,7 @@ export function Header({ isLoggedIn, onLogout }: HeaderProps) {
   return (
     <header className="header">
       <Link to="/" className="header-logo">
-        TaskFlow
+        Task Manager
       </Link>
       {isLoggedIn && (
         <button className="btn btn-ghost" onClick={onLogout}>

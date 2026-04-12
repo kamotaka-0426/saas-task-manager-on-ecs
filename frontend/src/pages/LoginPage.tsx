@@ -40,7 +40,7 @@ export function LoginPage() {
   return (
     <div className="auth-container">
       <div className="card auth-card">
-        <h1 className="auth-title">TaskFlow</h1>
+        <h1 className="auth-title">Task Manager</h1>
         <p className="auth-subtitle">Multi-tenant task management</p>
 
         <h2 className="section-title">{isRegistering ? 'Create account' : 'Sign in'}</h2>
