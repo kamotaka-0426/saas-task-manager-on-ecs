@@ -1,0 +1,107 @@
+name: Backend Deploy (ECS)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'migrations/**'
+      - 'alembic.ini'
+      - '.github/workflows/backend-deploy.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r app/requirements.txt -r app/requirements-dev.txt
+
+      - name: Run tests
+        run: pytest app/tests/ -v
+        env:
+          PYTHONPATH: "."
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ap-northeast-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f ./app/Dockerfile .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Run database migrations
+        env:
+          ECS_CLUSTER:              ${{ secrets.ECS_CLUSTER }}
+          ECS_TASK_DEFINITION:      ${{ secrets.ECS_TASK_DEFINITION }}
+          ECS_TASK_EXECUTION_ROLE:  ${{ secrets.ECS_TASK_EXECUTION_ROLE_ARN }}
+          ECS_SUBNET_ID:            ${{ secrets.ECS_SUBNET_ID }}
+          ECS_SECURITY_GROUP_ID:    ${{ secrets.ECS_SECURITY_GROUP_ID }}
+          ECR_REGISTRY:             ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY:           ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG:                ${{ github.sha }}
+        run: |
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$ECS_CLUSTER" \
+            --task-definition "$ECS_TASK_DEFINITION" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$ECS_SUBNET_ID],securityGroups=[$ECS_SECURITY_GROUP_ID],assignPublicIp=ENABLED}" \
+            --overrides "{\"containerOverrides\":[{\"name\":\"api\",\"image\":\"$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG\",\"command\":[\"python3\",\"-m\",\"alembic\",\"upgrade\",\"head\"]}]}" \
+            --region ap-northeast-1 \
+            --query 'tasks[0].taskArn' --output text)
+
+          echo "Migration task ARN: $TASK_ARN"
+          echo "Waiting for migration to complete..."
+          aws ecs wait tasks-stopped --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN" --region ap-northeast-1
+
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN" --region ap-northeast-1 \
+            --query 'tasks[0].containers[0].exitCode' --output text)
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "Migration failed with exit code $EXIT_CODE"
+            aws ecs describe-tasks --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN" --region ap-northeast-1
+            exit 1
+          fi
+          echo "Migration completed successfully"
+
+      - name: Deploy to ECS Fargate
+        env:
+          ECS_CLUSTER:  ${{ secrets.ECS_CLUSTER }}
+          ECS_SERVICE:  ${{ secrets.ECS_SERVICE }}
+        run: |
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" \
+            --service "$ECS_SERVICE" \
+            --force-new-deployment \
+            --region ap-northeast-1
+          echo "Deployment triggered for $ECS_SERVICE"
