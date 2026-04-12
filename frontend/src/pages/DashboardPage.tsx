@@ -1,6 +1,7 @@
 import { useState, useEffect, FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { orgsApi } from '../api/organizations'
+import { getApiErrorDetail } from '../lib/api'
 import type { Organization } from '../types'
 
 export function DashboardPage() {
@@ -26,9 +27,7 @@ export function DashboardPage() {
       setSlug('')
       setShowForm(false)
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } }).response?.data
-        ?.detail
-      setError(detail ?? 'Failed to create organization')
+      setError(getApiErrorDetail(err, 'Failed to create organization'))
     }
   }
 

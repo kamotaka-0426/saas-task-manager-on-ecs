@@ -1,4 +1,4 @@
-from app.schemas.auth import UserCreate, UserResponse, Token, TokenData
+from app.schemas.auth import UserCreate, UserResponse, Token
 from app.schemas.organization import (
     OrganizationCreate, OrganizationUpdate, OrganizationResponse,
     MemberInvite, MemberResponse,
@@ -13,7 +13,7 @@ from app.schemas.label import LabelCreate, LabelResponse
 from app.schemas.activity_log import ActivityLogResponse
 
 __all__ = [
-    "UserCreate", "UserResponse", "Token", "TokenData",
+    "UserCreate", "UserResponse", "Token",
     "OrganizationCreate", "OrganizationUpdate", "OrganizationResponse",
     "MemberInvite", "MemberResponse",
     "ProjectCreate", "ProjectUpdate", "ProjectResponse",

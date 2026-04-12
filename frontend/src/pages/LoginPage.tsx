@@ -1,6 +1,7 @@
 import { useState, FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import { getApiErrorDetail } from '../lib/api'
 
 export function LoginPage() {
   const { login, register } = useAuth()
@@ -27,11 +28,8 @@ export function LoginPage() {
         navigate('/')
       }
     } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : 'An error occurred'
-      const detail = (err as { response?: { data?: { detail?: string } } }).response?.data
-        ?.detail
-      setError(detail ?? msg)
+      const fallback = err instanceof Error ? err.message : 'An error occurred'
+      setError(getApiErrorDetail(err, fallback))
     } finally {
       setLoading(false)
     }

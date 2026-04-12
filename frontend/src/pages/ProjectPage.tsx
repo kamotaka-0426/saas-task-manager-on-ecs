@@ -2,10 +2,10 @@ import { useState, useEffect, FormEvent } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { orgsApi } from '../api/organizations'
 import { projectsApi } from '../api/projects'
+import { ROLE_RANK } from '../lib/issue'
+import { getApiErrorDetail } from '../lib/api'
 import type { Organization, Project, Member, Role } from '../types'
 import { useAuth } from '../hooks/useAuth'
-
-const ROLE_RANK: Record<Role, number> = { member: 0, admin: 1, owner: 2 }
 
 export function ProjectPage() {
   const { orgId } = useParams<{ orgId: string }>()
@@ -48,9 +48,7 @@ export function ProjectPage() {
       setDescription('')
       setShowForm(false)
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } }).response?.data
-        ?.detail
-      setError(detail ?? 'Failed to create project')
+      setError(getApiErrorDetail(err, 'Failed to create project'))
     }
   }
 

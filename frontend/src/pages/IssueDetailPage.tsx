@@ -4,36 +4,11 @@ import { orgsApi } from '../api/organizations'
 import { issuesApi } from '../api/issues'
 import { labelsApi } from '../api/labels'
 import { useAuth } from '../hooks/useAuth'
+import { ROLE_RANK, STATUS_COLOR, PRIORITY_COLOR, STATUSES, PRIORITIES, formatDate } from '../lib/issue'
+import { getApiErrorDetail } from '../lib/api'
 import type {
   IssueDetail, Member, Label, Role, Status, Priority,
 } from '../types'
-
-const ROLE_RANK: Record<Role, number> = { member: 0, admin: 1, owner: 2 }
-
-const STATUS_COLOR: Record<Status, string> = {
-  backlog:     '#666',
-  todo:        '#4a90e2',
-  in_progress: '#f5a623',
-  done:        '#4caf50',
-  cancelled:   '#e74c3c',
-}
-
-const PRIORITY_COLOR: Record<Priority, string> = {
-  none:   '#555',
-  low:    '#4a90e2',
-  medium: '#f5a623',
-  high:   '#e74c3c',
-  urgent: '#9b59b6',
-}
-
-const STATUSES: Status[]   = ['backlog', 'todo', 'in_progress', 'done', 'cancelled']
-const PRIORITIES: Priority[] = ['none', 'low', 'medium', 'high', 'urgent']
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleString(undefined, {
-    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-  })
-}
 
 export function IssueDetailPage() {
   const { orgId, projectId, issueId } = useParams<{
@@ -143,9 +118,7 @@ export function IssueDetailPage() {
       setCommentText('')
       await reload()
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })
-        .response?.data?.detail
-      setCommentError(detail ?? 'Failed to post comment')
+      setCommentError(getApiErrorDetail(err, 'Failed to post comment'))
     } finally {
       setSubmittingComment(false)
     }

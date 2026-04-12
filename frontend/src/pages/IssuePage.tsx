@@ -4,30 +4,11 @@ import { orgsApi } from '../api/organizations'
 import { projectsApi } from '../api/projects'
 import { issuesApi } from '../api/issues'
 import { useAuth } from '../hooks/useAuth'
+import { ROLE_RANK, STATUS_COLOR, PRIORITY_COLOR, STATUSES, PRIORITIES } from '../lib/issue'
+import { getApiErrorDetail } from '../lib/api'
 import type {
   Project, Issue, Member, Role, Status, Priority, SortOption,
 } from '../types'
-
-const ROLE_RANK: Record<Role, number> = { member: 0, admin: 1, owner: 2 }
-
-const STATUS_COLOR: Record<Status, string> = {
-  backlog:     '#666',
-  todo:        '#4a90e2',
-  in_progress: '#f5a623',
-  done:        '#4caf50',
-  cancelled:   '#e74c3c',
-}
-
-const PRIORITY_COLOR: Record<Priority, string> = {
-  none:   '#555',
-  low:    '#4a90e2',
-  medium: '#f5a623',
-  high:   '#e74c3c',
-  urgent: '#9b59b6',
-}
-
-const STATUSES: Status[] = ['backlog', 'todo', 'in_progress', 'done', 'cancelled']
-const PRIORITIES: Priority[] = ['none', 'low', 'medium', 'high', 'urgent']
 
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: '-updated_at', label: 'Updated (newest)' },
@@ -141,9 +122,7 @@ export function IssuePage() {
       setIssuePriority('none')
       setShowForm(false)
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })
-        .response?.data?.detail
-      setError(detail ?? 'Failed to create issue')
+      setError(getApiErrorDetail(err, 'Failed to create issue'))
     }
   }
 

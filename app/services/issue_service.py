@@ -182,13 +182,8 @@ class IssueService:
     ) -> Issue:
         issue = IssueService.get(db, project_id, issue_id)
 
-        for field_name, new_val_getter in [
-            ("title",       lambda: data.title),
-            ("description", lambda: data.description),
-            ("status",      lambda: data.status),
-            ("priority",    lambda: data.priority),
-        ]:
-            new_val = new_val_getter()
+        for field_name in ("title", "description", "status", "priority"):
+            new_val = getattr(data, field_name)
             if new_val is None:
                 continue
             old_val = getattr(issue, field_name)

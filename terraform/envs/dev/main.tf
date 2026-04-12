@@ -15,7 +15,7 @@ terraform {
     }
   }
   backend "s3" {
-    bucket         = "saas-task-manager-on-ecs-tfstate-39b67de5"
+    bucket         = "saas-task-manager-on-ecs-tfstate-12c298a4"
     key            = "dev/terraform.tfstate"
     region         = "ap-northeast-1"
     dynamodb_table = "terraform-state-locking"

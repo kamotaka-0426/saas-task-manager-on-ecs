@@ -19,7 +19,7 @@ router = APIRouter(
 )
 
 
-def _verify_project(org_id: int, project_id: int, db: Session = Depends(security.get_db)):
+def _verify_project(org_id: int, project_id: int, db: Session):
     return ProjectService.get(db, org_id, project_id)
 
 
