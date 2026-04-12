@@ -1,4 +1,5 @@
 from typing import List, Union
+from urllib.parse import quote_plus
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
@@ -31,7 +32,7 @@ class Settings(BaseSettings):
 
     @property
     def DATABASE_URL(self) -> str:
-        return f"postgresql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}/{self.DB_NAME}"
+        return f"postgresql://{self.DB_USER}:{quote_plus(self.DB_PASSWORD)}@{self.DB_HOST}/{self.DB_NAME}"
 
     model_config = {"env_file": ".env", "case_sensitive": False}
 
