@@ -21,7 +21,8 @@ import app.models.label  # noqa: F401, E402
 
 config = context.config
 # Override sqlalchemy.url from settings (reads env vars)
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# configparser interprets % as interpolation syntax, so escape % → %%
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("%", "%%"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
