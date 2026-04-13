@@ -16,110 +16,126 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _table_exists(name: str) -> bool:
+    result = op.get_bind().execute(
+        sa.text(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = :t"
+        ),
+        {"t": name},
+    )
+    return result.fetchone() is not None
+
+
 def upgrade() -> None:
     # --- comments ---
-    op.create_table(
-        "comments",
-        sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column(
-            "issue_id",
-            sa.Integer(),
-            sa.ForeignKey("issues.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-        sa.Column(
-            "created_by", sa.Integer(), sa.ForeignKey("users.id"), nullable=False
-        ),
-        sa.Column("content", sa.Text(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-        ),
-    )
-    op.create_index("ix_comments_id", "comments", ["id"])
-    op.create_index("ix_comments_issue_id", "comments", ["issue_id"])
+    if not _table_exists("comments"):
+        op.create_table(
+            "comments",
+            sa.Column("id", sa.Integer(), primary_key=True),
+            sa.Column(
+                "issue_id",
+                sa.Integer(),
+                sa.ForeignKey("issues.id", ondelete="CASCADE"),
+                nullable=False,
+            ),
+            sa.Column(
+                "created_by", sa.Integer(), sa.ForeignKey("users.id"), nullable=False
+            ),
+            sa.Column("content", sa.Text(), nullable=False),
+            sa.Column(
+                "created_at",
+                sa.DateTime(timezone=True),
+                server_default=sa.text("now()"),
+            ),
+            sa.Column(
+                "updated_at",
+                sa.DateTime(timezone=True),
+                server_default=sa.text("now()"),
+            ),
+        )
+        op.create_index("ix_comments_id", "comments", ["id"])
+        op.create_index("ix_comments_issue_id", "comments", ["issue_id"])
 
     # --- activity_logs ---
-    op.create_table(
-        "activity_logs",
-        sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column(
-            "issue_id",
-            sa.Integer(),
-            sa.ForeignKey("issues.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-        sa.Column(
-            "user_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=False
-        ),
-        sa.Column("action", sa.String(), nullable=False),
-        sa.Column("field", sa.String(), nullable=True),
-        sa.Column("old_value", sa.String(), nullable=True),
-        sa.Column("new_value", sa.String(), nullable=True),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-        ),
-    )
-    op.create_index("ix_activity_logs_id", "activity_logs", ["id"])
-    op.create_index("ix_activity_logs_issue_id", "activity_logs", ["issue_id"])
+    if not _table_exists("activity_logs"):
+        op.create_table(
+            "activity_logs",
+            sa.Column("id", sa.Integer(), primary_key=True),
+            sa.Column(
+                "issue_id",
+                sa.Integer(),
+                sa.ForeignKey("issues.id", ondelete="CASCADE"),
+                nullable=False,
+            ),
+            sa.Column(
+                "user_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=False
+            ),
+            sa.Column("action", sa.String(), nullable=False),
+            sa.Column("field", sa.String(), nullable=True),
+            sa.Column("old_value", sa.String(), nullable=True),
+            sa.Column("new_value", sa.String(), nullable=True),
+            sa.Column(
+                "created_at",
+                sa.DateTime(timezone=True),
+                server_default=sa.text("now()"),
+            ),
+        )
+        op.create_index("ix_activity_logs_id", "activity_logs", ["id"])
+        op.create_index("ix_activity_logs_issue_id", "activity_logs", ["issue_id"])
 
     # --- labels ---
-    op.create_table(
-        "labels",
-        sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column(
-            "org_id",
-            sa.Integer(),
-            sa.ForeignKey("organizations.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-        sa.Column("name", sa.String(), nullable=False),
-        sa.Column("color", sa.String(), nullable=False, server_default="#6366f1"),
-        sa.UniqueConstraint("org_id", "name", name="uq_label_org_name"),
-    )
-    op.create_index("ix_labels_id", "labels", ["id"])
+    if not _table_exists("labels"):
+        op.create_table(
+            "labels",
+            sa.Column("id", sa.Integer(), primary_key=True),
+            sa.Column(
+                "org_id",
+                sa.Integer(),
+                sa.ForeignKey("organizations.id", ondelete="CASCADE"),
+                nullable=False,
+            ),
+            sa.Column("name", sa.String(), nullable=False),
+            sa.Column("color", sa.String(), nullable=False, server_default="#6366f1"),
+            sa.UniqueConstraint("org_id", "name", name="uq_label_org_name"),
+        )
+        op.create_index("ix_labels_id", "labels", ["id"])
 
     # --- issue_labels (association) ---
-    op.create_table(
-        "issue_labels",
-        sa.Column(
-            "issue_id",
-            sa.Integer(),
-            sa.ForeignKey("issues.id", ondelete="CASCADE"),
-            primary_key=True,
-        ),
-        sa.Column(
-            "label_id",
-            sa.Integer(),
-            sa.ForeignKey("labels.id", ondelete="CASCADE"),
-            primary_key=True,
-        ),
-    )
+    if not _table_exists("issue_labels"):
+        op.create_table(
+            "issue_labels",
+            sa.Column(
+                "issue_id",
+                sa.Integer(),
+                sa.ForeignKey("issues.id", ondelete="CASCADE"),
+                primary_key=True,
+            ),
+            sa.Column(
+                "label_id",
+                sa.Integer(),
+                sa.ForeignKey("labels.id", ondelete="CASCADE"),
+                primary_key=True,
+            ),
+        )
 
     # --- issue_assignees (association) ---
-    op.create_table(
-        "issue_assignees",
-        sa.Column(
-            "issue_id",
-            sa.Integer(),
-            sa.ForeignKey("issues.id", ondelete="CASCADE"),
-            primary_key=True,
-        ),
-        sa.Column(
-            "user_id",
-            sa.Integer(),
-            sa.ForeignKey("users.id", ondelete="CASCADE"),
-            primary_key=True,
-        ),
-    )
+    if not _table_exists("issue_assignees"):
+        op.create_table(
+            "issue_assignees",
+            sa.Column(
+                "issue_id",
+                sa.Integer(),
+                sa.ForeignKey("issues.id", ondelete="CASCADE"),
+                primary_key=True,
+            ),
+            sa.Column(
+                "user_id",
+                sa.Integer(),
+                sa.ForeignKey("users.id", ondelete="CASCADE"),
+                primary_key=True,
+            ),
+        )
 
 
 def downgrade() -> None:
