@@ -10,6 +10,7 @@ Creates all tables for the SaaS Task Manager MVP:
 from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import ENUM as PgEnum
 
 revision: str = "a190cfad440c"
 down_revision: Union[str, Sequence[str], None] = None
@@ -97,7 +98,7 @@ def upgrade() -> None:
             ),
             sa.Column(
                 "role",
-                sa.Enum("owner", "admin", "member", name="roleenum", create_type=False),
+                PgEnum("owner", "admin", "member", name="roleenum", create_type=False),
                 nullable=False,
                 server_default="member",
             ),
@@ -146,7 +147,7 @@ def upgrade() -> None:
             sa.Column("description", sa.Text(), nullable=True),
             sa.Column(
                 "status",
-                sa.Enum(
+                PgEnum(
                     "backlog", "todo", "in_progress", "done", "cancelled",
                     name="statusenum", create_type=False,
                 ),
@@ -155,7 +156,7 @@ def upgrade() -> None:
             ),
             sa.Column(
                 "priority",
-                sa.Enum(
+                PgEnum(
                     "none", "low", "medium", "high", "urgent",
                     name="priorityenum", create_type=False,
                 ),
