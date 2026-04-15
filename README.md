@@ -1,30 +1,35 @@
 # SaaS Task Manager on ECS
 
-[日本語版 README はこちら](README.ja.md)
-
 A production-ready, secure, and scalable multi-tenant SaaS task management system built on AWS ECS Fargate — a minimal Linear/Asana clone.
 All infrastructure layers are managed with Terraform, and continuous delivery is achieved through GitHub Actions.
 
 ## Architecture
 
-```
-Users
-  │
-  ▼
-CloudFront (HTTPS, CDN)
-  ├── /          → S3 (React frontend, OAC-secured)
-  └── /api/*     → ALB (custom header verification)
-                      │
-                      ▼
-                ECS Fargate (FastAPI)
-                        │
-                        ├── AWS Secrets Manager (DB credentials)
-                        │
-                        ▼
-                  RDS PostgreSQL (Private Subnet)
+```mermaid
+graph LR
+    User([Browser])
+    GHA([GitHub Actions])
 
-EventBridge (scheduled)
-  └── Lambda → updates CloudFront origin on schedule
+    subgraph Edge["Edge (CloudFront + S3)"]
+        CF_FE["CloudFront<br/>Frontend"]
+        CF_API["CloudFront<br/>API"]
+        S3[(S3<br/>React SPA)]
+    end
+
+    subgraph VPC["VPC (ap-northeast-1)"]
+        ALB[ALB]
+        ECS_APP["ECS Fargate<br/>FastAPI (app)"]
+        ECS_MIG["ECS Fargate<br/>Alembic (migration)"]
+        RDS[(RDS PostgreSQL<br/>GIN / tsvector)]
+    end
+
+    User -->|HTTPS| CF_FE -->|OAC| S3
+    User -->|HTTPS| CF_API -->|X-Origin-Verify| ALB --> ECS_APP --> RDS
+    ECS_MIG -->|schema migration| RDS
+    ECS_APP & ECS_MIG -.->|secrets| SM[Secrets Manager]
+    GHA -->|1. push image| ECR[ECR] -->|pull| ECS_APP & ECS_MIG
+    GHA -->|2. run migration| ECS_MIG
+    GHA -->|3. update-service| ECS_APP
 ```
 
 | Layer | Technology |
@@ -34,9 +39,11 @@ EventBridge (scheduled)
 | Database | Amazon RDS for PostgreSQL (Private Subnet) |
 | Migrations | Alembic (run as a one-off ECS task on each deploy) |
 | Networking | VPC, ALB, Route53, ACM |
-| Security | IRSA-equivalent task roles, ACM (TLS 1.2+), AWS Secrets Manager, custom origin header |
+| Security | ECS Task IAM roles, ACM (TLS 1.2+), AWS Secrets Manager, custom origin header |
 | IaC | Terraform (fully modular) |
 | CI/CD | GitHub Actions (OIDC — no stored AWS credentials) |
+
+---
 
 ## Application Features
 
@@ -63,25 +70,84 @@ EventBridge (scheduled)
 | admin | Yes | No | Yes |
 | owner | Yes | Yes | Yes |
 
-## Key Design Decisions
+---
 
-**1. Full Infrastructure as Code**
-Everything from the VPC to ECS task definitions to CloudFront distributions is managed in Terraform. No manual AWS console operations.
+## Architecture Decision Records
 
-**2. Database Migrations as ECS One-off Tasks**
-Alembic migrations run as a standalone ECS Fargate task on each backend deploy — before the new application version is rolled out. The CI pipeline waits for the migration task to exit successfully before proceeding to `update-service`.
+### ADR 1 — Database Migrations as ECS One-off Tasks (Ordered Before Service Update)
 
-**3. Secure Origin Protection**
-Direct access to the ALB is blocked. CloudFront attaches a random secret to the `X-Origin-Verify` header on every request. The FastAPI middleware rejects any request missing this header (except `/health`), preventing users from bypassing CloudFront.
+**Context**
 
-**4. Keyless AWS Authentication**
-GitHub Actions assumes an IAM role via OIDC federation — no long-lived AWS access keys stored as secrets. The IAM role is scoped to only the specific GitHub repository.
+Running Alembic migrations inside the application container at startup is a common pattern, but it creates race conditions when multiple tasks start simultaneously — each task attempts the migration independently, leading to conflicts or duplicate operations. Alternatively, migrations can run in the CI pipeline using a database connection string, but this requires exposing the RDS endpoint outside the VPC.
 
-**5. Secrets Management via AWS Secrets Manager**
-Database credentials and application secrets are stored in AWS Secrets Manager and injected into the ECS task as environment variables at runtime — never baked into the container image.
+**Decision**
 
-**6. Lightweight, Reproducible Docker Images**
-Multi-stage builds separate the build environment from the runtime image. A Python virtual environment (`venv`) is copied between stages, producing a small and secure final image.
+Run Alembic as a standalone ECS Fargate one-off task. The CI/CD pipeline is structured in three ordered steps:
+
+1. Build and push the Docker image to ECR (`:$GITHUB_SHA`)
+2. Launch an ECS one-off task using the same image with `alembic upgrade head` as the command — **wait for exit 0**
+3. Only if the migration succeeds, run `ecs update-service` to roll out the new application version
+
+This guarantees the schema is fully up to date before any application pod starts serving traffic.
+
+**Trade-offs accepted**
+
+- Each deployment runs an extra ECS task (~30–60 seconds). This is acceptable for the safety guarantee it provides.
+- If the migration fails, the pipeline halts before updating the service — the old application version continues serving against the old schema, which remains valid.
+
+---
+
+### ADR 2 — Cursor-Based Pagination over Offset Pagination
+
+**Context**
+
+The issues list endpoint must support pagination across potentially large result sets. Offset-based pagination (`LIMIT 20 OFFSET 100`) is simple but unstable: if a row is inserted or deleted between page fetches, items can be skipped or duplicated.
+
+**Decision**
+
+Use keyset (cursor) pagination. The response includes a `next_cursor` value encoding the last item's sort key. The next request passes `?cursor=<value>` to fetch the next page starting after that item.
+
+The cursor is stable regardless of concurrent writes, and the query uses the primary key index — making it O(log n) rather than O(n) for deep pages.
+
+**Trade-offs accepted**
+
+- Cursor pagination does not support random page jumps (e.g., "go to page 5"). For a task management application where users scroll through a list, this is an acceptable constraint.
+
+---
+
+### ADR 3 — PostgreSQL Full-Text Search (tsvector + GIN Index)
+
+**Context**
+
+The issues list requires a `?q=` search parameter that searches across issue titles and descriptions. Application-level `ILIKE '%keyword%'` is simple but performs a full table scan and does not scale.
+
+**Decision**
+
+Use PostgreSQL's native full-text search. A `tsvector` column is maintained on the `issues` table with a GIN index, combining the `title` and `description` fields. The search query uses `to_tsquery`, which leverages the index for O(log n) lookups.
+
+**Trade-offs accepted**
+
+- PostgreSQL full-text search uses language-specific stemming and stop words, which can produce unexpected matches or misses compared to simple substring search. For a task manager operating primarily in English, this behavior is acceptable.
+- Requires an Alembic migration to add the `tsvector` column and GIN index.
+
+---
+
+### ADR 4 — Multi-Tenant Isolation at the Database Row Level
+
+**Context**
+
+In a multi-tenant SaaS application, tenant data must be strictly isolated. Two common approaches are: (1) a separate database or schema per tenant, or (2) a shared schema with an `organization_id` foreign key on every table.
+
+**Decision**
+
+Use a shared schema with `organization_id` on every resource table. All API endpoints are scoped under `/orgs/{org_id}/...`, and every query filters on `organization_id`. The RBAC middleware verifies the requesting user's membership in the target organization before any handler runs.
+
+**Trade-offs accepted**
+
+- A bug in the query layer could theoretically expose one tenant's data to another. This risk is mitigated by the RBAC middleware (which rejects requests before the query runs) and by unit tests that explicitly verify cross-tenant access returns `403 Forbidden`.
+- Separate-schema isolation would be stronger but significantly more complex to operate at this scale.
+
+---
 
 ## Repository Structure
 
@@ -117,6 +183,8 @@ Multi-stage builds separate the build environment from the runtime image. A Pyth
 └── destroy-all.sh          # Safe full teardown script
 ```
 
+---
+
 ## CI/CD Pipeline
 
 ### Backend (`app/**`, `migrations/**` push to `main`)
@@ -148,6 +216,8 @@ Push to main
     └── CloudFront cache invalidation
 ```
 
+---
+
 ## Security Highlights
 
 | Concern | Implementation |
@@ -158,6 +228,52 @@ Push to main
 | TLS everywhere | ACM certificates, CloudFront enforces HTTPS redirect, TLS 1.2+ minimum |
 | Private database | RDS in private subnets, no public endpoint |
 | Container isolation | ECS Fargate — no shared host, no node-level instance profile access |
+
+---
+
+## Testing
+
+86 tests across 7 test modules, all running with FastAPI's `TestClient` and an in-memory SQLite database — no running PostgreSQL, ECS cluster, or AWS account required.
+
+```bash
+cd app
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements-dev.txt
+pytest tests/ -v
+```
+
+| Module | Cases | What it covers |
+|---|---|---|
+| `test_auth.py` | 7 | Register (success, duplicate, invalid format), login (success, wrong password, unknown user), health check |
+| `test_organizations.py` | 17 | Create, list, get, update, delete; invite members; role assignment; outsider access (403) |
+| `test_projects.py` | 13 | Full CRUD; org-scoped isolation; member/admin/owner permission boundaries |
+| `test_issues.py` | 13 | Create/list/get/update/delete per role; RBAC boundaries (member cannot create, admin cannot delete) |
+| `test_issue_filters.py` | 13 | Filter by status/priority/assignee/label; full-text search (`?q=`); cursor pagination; combined filter + search |
+| `test_labels.py` | 15 | Label CRUD; attach/detach labels to issues; org-scoped isolation |
+| `test_comments.py` | 8 | Add/list/delete comments; non-member access (403) |
+
+The RBAC suite (`test_issues.py`) verifies that each role (member, admin, owner) can only perform the operations it is authorized for — including cases where an admin intentionally receives `403 Forbidden` on delete.
+
+The cursor pagination tests (`test_issue_filters.py`) confirm that pages are non-overlapping and that `next_cursor` becomes `None` on the final page.
+
+---
+
+## Estimated Monthly Cost (ap-northeast-1)
+
+| Service | Spec | Cost |
+|---|---|---|
+| ECS Fargate | 0.5 vCPU / 1 GB × 1 task / 24h | ~$15/month |
+| ALB | 1 load balancer | ~$16/month |
+| RDS PostgreSQL | db.t3.micro / 20 GB | ~$22/month |
+| CloudFront | 2 distributions | ~$1/month |
+| Route 53 | 1 hosted zone | $0.50/month |
+| Secrets Manager | 2 secrets (DB + App) | $0.80/month |
+| ECR | Image storage (lifecycle managed) | ~$0.50/month |
+| S3 | Static assets | ~$0.50/month |
+| CloudWatch + Lambda | Logs, alarms, origin updater | ~$2/month |
+| **Total** | | **~$58/month** |
+
+---
 
 ## Deploy Guide
 
@@ -231,6 +347,8 @@ Set the following repository secrets in GitHub:
 When using `setup-all.sh`, all of these values are printed automatically at the end of the script.
 
 Push to `main` to trigger the pipeline.
+
+---
 
 ## Teardown
 
